@@ -196,3 +196,16 @@ def get_all_users(db: Session = Depends(auth.get_db)):
             "created_at": u.created_at
         } for u in users
     ]
+
+@app.get("/api/users")
+def get_all_users(db: Session = Depends(auth.get_db)):
+    users = db.query(models.User).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "points": u.points,
+            "created_at": u.created_at
+        } for u in users
+    ]
