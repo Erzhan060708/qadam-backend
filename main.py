@@ -129,3 +129,50 @@ def create_order(
     db.refresh(new_order)
     
     return {"order_id": new_order.id, "qr_code": qr_code}
+
+# ================== MISSING ENDPOINTS ==================
+@app.get("/api/orders")
+def get_orders(db: Session = Depends(auth.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    orders = db.query(models.Order).filter(models.Order.user_id == current_user.id).all()
+    result = []
+    for o in orders:
+        result.append({
+            "id": o.id,
+            "qr_code": o.qr_code,
+            "status": o.status,
+            "created_at": o.created_at,
+            "bags": {
+                "title": o.bag.title,
+                "pickup_start": o.bag.pickup_start,
+                "pickup_end": o.bag.pickup_end,
+                "discounted_price": o.bag.discounted_price,
+                "stores": {"name": o.bag.store.name}
+            }
+        })
+    return result
+
+@app.put("/api/orders/{order_id}/complete")
+def complete_order(order_id: int, db: Session = Depends(auth.get_db)):
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if order:
+        order.status = "completed"
+        db.commit()
+    return {"message": "Order completed"}
+
+
+
+@app.delete("/api/stores/{store_id}")
+def delete_store(store_id: int, db: Session = Depends(auth.get_db)):
+    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    if store:
+        db.delete(store)
+        db.commit()
+    return {"message": "Store deleted"}
+
+@app.delete("/api/bags/{bag_id}")
+def delete_bag(bag_id: int, db: Session = Depends(auth.get_db)):
+    bag = db.query(models.Bag).filter(models.Bag.id == bag_id).first()
+    if bag:
+        db.delete(bag)
+        db.commit()
+    return {"message": "Bag deleted"}
