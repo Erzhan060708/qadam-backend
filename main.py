@@ -22,22 +22,29 @@ app.add_middleware(
 # ================== AUTH ==================
 @app.post("/api/register", response_model=schemas.Token)
 def register(user: schemas.UserCreate, db: Session = Depends(auth.get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Бұл email тіркелген")
-    
-    hashed_pwd = auth.get_password_hash(user.password)
-    new_user = models.User(
-        email=user.email, 
-        hashed_password=hashed_pwd, 
-        full_name=user.full_name
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    token = auth.create_access_token(data={"sub": new_user.email})
-    return {"access_token": token, "token_type": "bearer"}
+    try:
+        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Бұл email тіркелген")
+        
+        hashed_pwd = auth.get_password_hash(user.password)
+        new_user = models.User(
+            email=user.email, 
+            hashed_password=hashed_pwd, 
+            full_name=user.full_name
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        token = auth.create_access_token(data={"sub": new_user.email})
+        return {"access_token": token, "token_type": "bearer"}
+    except Exception as e:
+        import traceback
+        print("🔥 SERVER ERROR:", e)
+        print(traceback.format_exc())
+        # Қатенің мәтінін тікелей Flutter-ге қайтарамыз
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/login", response_model=schemas.Token)
 def login(user: schemas.UserLogin, db: Session = Depends(auth.get_db)):
