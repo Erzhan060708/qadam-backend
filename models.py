@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     orders = relationship("Order", back_populates="user")
+    merchant_stores = relationship("Store", foreign_keys="Store.owner_user_id")
 
 class Store(Base):
     __tablename__ = "stores"
@@ -25,8 +26,20 @@ class Store(Base):
     category = Column(String, default="Кафе")
     rating = Column(Float, default=4.5)
     image_url = Column(String, nullable=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     
     bags = relationship("Bag", back_populates="store")
+    owner = relationship("User", foreign_keys=[owner_user_id])
+    announcements = relationship("Announcement", back_populates="store", cascade="all, delete-orphan")
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store", back_populates="announcements")
 
 class Bag(Base):
     __tablename__ = "bags"

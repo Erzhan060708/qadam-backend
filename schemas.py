@@ -23,6 +23,10 @@ class StoreCreate(BaseModel):
     rating: Optional[float] = 4.5
     image_url: Optional[str] = None
 
+class AnnouncementCreate(BaseModel):
+    title: str
+    body: str
+
 class BagCreate(BaseModel):
     store_id: int
     title: str

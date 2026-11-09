@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 import models, schemas, auth, seed
 from database import engine
 import uuid
@@ -23,6 +23,9 @@ app.add_middleware(
 def startup():
     db = auth.SessionLocal()
     try:
+        if "owner_user_id" not in {column["name"] for column in inspect(engine).get_columns("stores")}:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE stores ADD COLUMN owner_user_id INTEGER"))
         seed.seed_if_empty(db)
     finally:
         db.close()
@@ -132,6 +135,7 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
         "full_name": current_user.full_name,
         "points": current_user.points,
         "role": current_user.role,
+        "merchant_store_ids": [store.id for store in current_user.merchant_stores],
     }
 
 
@@ -157,6 +161,59 @@ def get_store(store_id: int, db: Session = Depends(auth.get_db)):
         "image_url": store.image_url,
         "bags": [serialize_bag(b) for b in bags],
     }
+
+
+@app.get("/api/stores/{store_id}/announcements")
+def get_store_announcements(store_id: int, db: Session = Depends(auth.get_db)):
+    return db.query(models.Announcement).filter(
+        models.Announcement.store_id == store_id
+    ).order_by(models.Announcement.created_at.desc()).all()
+
+
+@app.get("/api/announcements")
+def get_announcements(db: Session = Depends(auth.get_db)):
+    rows = (db.query(models.Announcement)
+        .join(models.Store, models.Store.id == models.Announcement.store_id)
+        .order_by(models.Announcement.created_at.desc()).limit(12).all())
+    return [{"id": row.id, "store_id": row.store_id, "store_name": row.store.name,
+             "title": row.title, "body": row.body, "created_at": row.created_at} for row in rows]
+
+
+@app.get("/api/merchant/stores/{store_id}")
+def get_merchant_store(
+    store_id: int,
+    db: Session = Depends(auth.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Кафе табылмады")
+    if current_user.role != "merchant" or store.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Бұл кафе кабинетіне рұқсат жоқ")
+    return {"id": store.id, "name": store.name, "address": store.address, "image_url": store.image_url}
+
+
+@app.post("/api/merchant/stores/{store_id}/announcements")
+def create_announcement(
+    store_id: int,
+    announcement: schemas.AnnouncementCreate,
+    db: Session = Depends(auth.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Кафе табылмады")
+    if current_user.role != "merchant" or store.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Бұл кафе кабинетіне рұқсат жоқ")
+    title = announcement.title.strip()
+    body = announcement.body.strip()
+    if not title or not body:
+        raise HTTPException(status_code=422, detail="Тақырып пен мәтінді толтырыңыз")
+    item = models.Announcement(store_id=store_id, title=title, body=body)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @app.post("/api/stores")
