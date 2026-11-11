@@ -27,6 +27,7 @@ class Store(Base):
     rating = Column(Float, default=4.5)
     image_url = Column(String, nullable=True)
     owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     
     bags = relationship("Bag", back_populates="store")
     owner = relationship("User", foreign_keys=[owner_user_id])

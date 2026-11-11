@@ -26,6 +26,9 @@ def startup():
         if "owner_user_id" not in {column["name"] for column in inspect(engine).get_columns("stores")}:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE stores ADD COLUMN owner_user_id INTEGER"))
+        if "is_active" not in {column["name"] for column in inspect(engine).get_columns("stores")}:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE stores ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
         seed.seed_if_empty(db)
     finally:
         db.close()
@@ -141,12 +144,12 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
 
 @app.get("/api/stores")
 def get_stores(db: Session = Depends(auth.get_db)):
-    return db.query(models.Store).all()
+    return db.query(models.Store).filter(models.Store.is_active.is_(True)).all()
 
 
 @app.get("/api/stores/{store_id}")
 def get_store(store_id: int, db: Session = Depends(auth.get_db)):
-    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    store = db.query(models.Store).filter(models.Store.id == store_id, models.Store.is_active.is_(True)).first()
     if not store:
         raise HTTPException(status_code=404, detail="Кафе табылмады")
     bags = db.query(models.Bag).filter(models.Bag.store_id == store_id, models.Bag.status == "active").all()
@@ -165,8 +168,9 @@ def get_store(store_id: int, db: Session = Depends(auth.get_db)):
 
 @app.get("/api/stores/{store_id}/announcements")
 def get_store_announcements(store_id: int, db: Session = Depends(auth.get_db)):
-    return db.query(models.Announcement).filter(
-        models.Announcement.store_id == store_id
+    return db.query(models.Announcement).join(models.Store).filter(
+        models.Announcement.store_id == store_id,
+        models.Store.is_active.is_(True),
     ).order_by(models.Announcement.created_at.desc()).all()
 
 
@@ -174,6 +178,7 @@ def get_store_announcements(store_id: int, db: Session = Depends(auth.get_db)):
 def get_announcements(db: Session = Depends(auth.get_db)):
     rows = (db.query(models.Announcement)
         .join(models.Store, models.Store.id == models.Announcement.store_id)
+        .filter(models.Store.is_active.is_(True))
         .order_by(models.Announcement.created_at.desc()).limit(12).all())
     return [{"id": row.id, "store_id": row.store_id, "store_name": row.store.name,
              "title": row.title, "body": row.body, "created_at": row.created_at} for row in rows]
@@ -185,7 +190,7 @@ def get_merchant_store(
     db: Session = Depends(auth.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    store = db.query(models.Store).filter(models.Store.id == store_id, models.Store.is_active.is_(True)).first()
     if not store:
         raise HTTPException(status_code=404, detail="Кафе табылмады")
     if current_user.role != "merchant" or store.owner_user_id != current_user.id:
@@ -200,7 +205,7 @@ def create_announcement(
     db: Session = Depends(auth.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    store = db.query(models.Store).filter(models.Store.id == store_id).first()
+    store = db.query(models.Store).filter(models.Store.id == store_id, models.Store.is_active.is_(True)).first()
     if not store:
         raise HTTPException(status_code=404, detail="Кафе табылмады")
     if current_user.role != "merchant" or store.owner_user_id != current_user.id:
@@ -231,7 +236,8 @@ def get_bags(
     category: str = Query(default=""),
     db: Session = Depends(auth.get_db),
 ):
-    bags = db.query(models.Bag).filter(models.Bag.status == "active").all()
+    bags = (db.query(models.Bag).join(models.Store)
+        .filter(models.Bag.status == "active", models.Store.is_active.is_(True)).all())
     result = []
     for b in bags:
         item = serialize_bag(b)
@@ -359,7 +365,7 @@ def get_stats(db: Session = Depends(auth.get_db)):
     users_count = db.query(func.count(models.User.id)).scalar() or 0
     orders_count = db.query(func.count(models.Order.id)).scalar() or 0
     bags_count = db.query(func.count(models.Bag.id)).filter(models.Bag.status == "active").scalar() or 0
-    stores_count = db.query(func.count(models.Store.id)).scalar() or 0
+    stores_count = db.query(func.count(models.Store.id)).filter(models.Store.is_active.is_(True)).scalar() or 0
     meals_saved = max(orders_count, 12)
     kg_saved = round(meals_saved * 0.4, 1)
     co2 = round(kg_saved * 2.1, 1)
