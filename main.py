@@ -29,6 +29,13 @@ def startup():
         if "is_active" not in {column["name"] for column in inspect(engine).get_columns("stores")}:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE stores ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+        if "request_key" not in {column["name"] for column in inspect(engine).get_columns("orders")}:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE orders ADD COLUMN request_key VARCHAR"))
+        with engine.begin() as connection:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_request_key ON orders (request_key)"
+            ))
         seed.seed_if_empty(db)
     finally:
         db.close()
@@ -265,6 +272,21 @@ def create_order(
     db: Session = Depends(auth.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    if order.request_key:
+        existing = (
+            db.query(models.Order)
+            .filter(models.Order.request_key == order.request_key)
+            .first()
+        )
+        if existing:
+            if existing.user_id != current_user.id or existing.bag_id != order.bag_id:
+                raise HTTPException(status_code=409, detail="Сұраныс кілті қолданылған")
+            return {
+                "order_id": existing.id,
+                "qr_code": existing.qr_code,
+                "points": current_user.points,
+            }
+
     bag = db.query(models.Bag).filter(models.Bag.id == order.bag_id).first()
     if not bag or bag.quantity_available <= 0:
         raise HTTPException(status_code=400, detail="Пакет таусылған")
@@ -275,6 +297,7 @@ def create_order(
         user_id=current_user.id,
         bag_id=bag.id,
         qr_code=qr_code,
+        request_key=order.request_key,
     )
 
     bag.quantity_available -= 1

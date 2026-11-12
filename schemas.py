@@ -40,3 +40,4 @@ class BagCreate(BaseModel):
 
 class OrderCreate(BaseModel):
     bag_id: int
+    request_key: Optional[str] = None

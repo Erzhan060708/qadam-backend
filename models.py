@@ -65,6 +65,7 @@ class Order(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     bag_id = Column(Integer, ForeignKey("bags.id"))
     qr_code = Column(String, unique=True, index=True)
+    request_key = Column(String, nullable=True, unique=True, index=True)
     status = Column(String, default="paid")
     created_at = Column(DateTime, default=datetime.utcnow)
     
